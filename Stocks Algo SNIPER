@@ -1,0 +1,108 @@
+//@version=6
+indicator('Stocks Algo SNIPER - Clean Fixed', overlay = true, max_labels_count = 500, max_lines_count = 500)
+
+// =====================================
+// === INPUT ===
+// =====================================
+length_atr = input.int(22, 'ATR Period', minval = 1)
+mult_atr = input.float(3.0, 'ATR Multiplier', step = 0.1)
+
+// =====================================
+// === CALCULATIONS ===
+// =====================================
+ema200 = ta.ema(close, 200)
+ema20 = ta.ema(close, 20)
+atr = ta.atr(length_atr)
+
+// === TREND FILTER ===
+uptrend = close > ema200
+downtrend = close < ema200
+
+// === SNIPER ZONE ===
+zoneBuy = ema20 - atr * 0.3
+zoneSell = ema20 + atr * 0.3
+
+// === CANDLE CONFIRMATION ===
+bullishRejection = close > open and low <= ema20
+bearishRejection = close < open and high >= ema20
+
+// === SIGNAL LOGIC ===
+buySignal = uptrend and close <= zoneBuy and bullishRejection
+sellSignal = downtrend and close >= zoneSell and bearishRejection
+
+// =====================================
+// === VISUALS: BASIC ===
+// =====================================
+plot(ema200, 'EMA 200', color = color.new(color.orange, 0), linewidth = 2)
+plot(ema20, 'EMA 20', color = color.new(color.yellow, 0))
+bgcolor(uptrend ? color.new(color.green, 96) : color.new(color.red, 96))
+
+plotshape(buySignal, location = location.belowbar, color = color.new(color.green, 30), style = shape.triangleup, size = size.small)
+plotshape(sellSignal, location = location.abovebar, color = color.new(color.red, 30), style = shape.triangledown, size = size.small)
+
+// =====================================
+// === POSITION MANAGEMENT ===
+// =====================================
+var int position = 0
+var float active_entry = na
+var float active_sl = na
+var float active_tp = na
+
+var line currentEntryLine = na
+var line currentSlLine = na
+var line currentTpLine = na
+var label currentTpPriceLabel = na
+var label currentSlPriceLabel = na
+
+// Fungsi pembersih visual
+f_clearActiveLines() =>
+    line.delete(currentEntryLine)
+    line.delete(currentSlLine)
+    line.delete(currentTpLine)
+    label.delete(currentTpPriceLabel)
+    label.delete(currentSlPriceLabel)
+
+// =====================================
+// === EXECUTION ===
+// =====================================
+if position == 0
+    if buySignal
+        f_clearActiveLines()
+        position := 1
+        active_entry := close
+        active_sl := low - atr * 0.5
+        active_tp := close + atr * mult_atr
+
+        label.new(bar_index, low, 'SNIPER BUY', style = label.style_label_up, color = color.green, textcolor = color.white, size = size.small)
+        currentEntryLine := line.new(bar_index, active_entry, bar_index + 10, active_entry, color = color.blue, width = 2, style = line.style_dashed)
+        currentSlLine := line.new(bar_index, active_sl, bar_index + 10, active_sl, color = color.red, width = 2)
+        currentTpLine := line.new(bar_index, active_tp, bar_index + 10, active_tp, color = color.green, width = 2)
+        currentTpPriceLabel := label.new(bar_index + 10, active_tp, 'TP: ' + str.tostring(active_tp, '#.#'), style = label.style_none, textcolor = color.green, size = size.small)
+        currentSlPriceLabel := label.new(bar_index + 10, active_sl, 'SL: ' + str.tostring(active_sl, '#.#'), style = label.style_none, textcolor = color.red, size = size.small)
+
+    else if sellSignal
+        f_clearActiveLines()
+        position := -1
+        active_entry := close
+        active_sl := high + atr * 0.5
+        active_tp := close - atr * mult_atr
+
+        label.new(bar_index, high, 'SNIPER SELL', style = label.style_label_down, color = color.red, textcolor = color.white, size = size.small)
+        currentEntryLine := line.new(bar_index, active_entry, bar_index + 10, active_entry, color = color.blue, width = 2, style = line.style_dashed)
+        currentSlLine := line.new(bar_index, active_sl, bar_index + 10, active_sl, color = color.red, width = 2)
+        currentTpLine := line.new(bar_index, active_tp, bar_index + 10, active_tp, color = color.green, width = 2)
+        currentTpPriceLabel := label.new(bar_index + 10, active_tp, 'TP: ' + str.tostring(active_tp, '#.#'), style = label.style_none, textcolor = color.green, size = size.small)
+        currentSlPriceLabel := label.new(bar_index + 10, active_sl, 'SL: ' + str.tostring(active_sl, '#.#'), style = label.style_none, textcolor = color.red, size = size.small)
+
+else if position == 1
+    if low <= active_sl or high >= active_tp
+        position := 0
+        f_clearActiveLines()
+
+else if position == -1
+    if high >= active_sl or low <= active_tp
+        position := 0
+        f_clearActiveLines()
+
+// === ALERTS ===
+alertcondition(position != nz(position[1]), 'New Sniper Trade', 'Signal Activated')
